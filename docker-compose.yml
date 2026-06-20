@@ -1,0 +1,253 @@
+version: '3.8'
+
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.1
+    hostname: zookeeper
+    container_name: aldi-zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    hostname: kafka
+    container_name: aldi-kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    hostname: rabbitmq
+    container_name: aldi-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: aldi
+      RABBITMQ_DEFAULT_PASS: aldi2026
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: aldi-postgres
+    environment:
+      POSTGRES_USER: aldi
+      POSTGRES_PASSWORD: aldi2026
+      POSTGRES_DB: aldi_main
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  mongodb:
+    image: mongo:7-jammy
+    container_name: aldi-mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+  redis:
+    image: redis:7-alpine
+    container_name: aldi-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  consul:
+    image: hashicorp/consul:1.18
+    container_name: aldi-consul
+    ports:
+      - "8500:8500"
+    command: agent -server -bootstrap-expect=1 -ui -client=0.0.0.0
+
+  prometheus:
+    image: prom/prometheus:v2.51.2
+    container_name: aldi-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: aldi-grafana
+    ports:
+      - "3002:3000"
+    depends_on:
+      - prometheus
+    volumes:
+      - grafana_data:/var/lib/grafana
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.57
+    container_name: aldi-jaeger
+    ports:
+      - "16686:16686"
+      - "4317:4317"
+      - "4318:4318"
+    environment:
+      COLLECTOR_OTLP_ENABLED: true
+
+  orchestrator:
+    build: ./services/orchestrator
+    container_name: aldi-orchestrator
+    ports:
+      - "3000:3000"
+    depends_on:
+      - kafka
+      - postgres
+      - mongodb
+      - redis
+      - consul
+      - jaeger
+    environment:
+      NODE_ENV: production
+      KAFKA_BROKERS: kafka:9092
+      POSTGRES_URL: postgresql://aldi:aldi2026@postgres:5432/aldi_main
+      MONGODB_URL: mongodb://mongodb:27017/aldi_events
+      REDIS_URL: redis://redis:6379
+      CONSUL_HOST: consul
+      CONSUL_PORT: 8500
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+
+  product-service:
+    build: ./services/product-service
+    container_name: aldi-product-service
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+      - redis
+      - kafka
+      - consul
+      - jaeger
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/aldi_main
+      SPRING_DATASOURCE_USERNAME: aldi
+      SPRING_DATASOURCE_PASSWORD: aldi2026
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      CONSUL_HOST: consul
+      CONSUL_PORT: 8500
+
+  cart-service:
+    build: ./services/cart-service
+    container_name: aldi-cart-service
+    ports:
+      - "3001:3001"
+    depends_on:
+      - mongodb
+      - rabbitmq
+      - product-service
+      - consul
+    environment:
+      RAILS_ENV: production
+      MONGODB_URL: mongodb://mongodb:27017/aldi_cart
+      RABBITMQ_URL: amqp://aldi:aldi2026@rabbitmq:5672
+      CONSUL_HOST: consul
+      CONSUL_PORT: 8500
+
+  payment-service:
+    build: ./services/payment-service
+    container_name: aldi-payment-service
+    ports:
+      - "8081:8081"
+    depends_on:
+      - postgres
+      - kafka
+      - consul
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: aldi
+      DB_PASSWORD: aldi2026
+      DB_NAME: aldi_payments
+      KAFKA_BROKERS: kafka:9092
+      CONSUL_HOST: consul
+      CONSUL_PORT: 8500
+
+  inventory-service:
+    build: ./services/inventory-service
+    container_name: aldi-inventory-service
+    ports:
+      - "8082:8082"
+    depends_on:
+      - redis
+      - kafka
+      - consul
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      KAFKA_BROKERS: kafka:9092
+      CONSUL_HOST: consul
+      CONSUL_PORT: 8500
+
+  fraud-service:
+    build: ./services/fraud-service
+    container_name: aldi-fraud-service
+    ports:
+      - "8083:8083"
+    depends_on:
+      - mongodb
+      - kafka
+      - consul
+    environment:
+      MONGODB_URL: mongodb://mongodb:27017/aldi_fraud
+      KAFKA_BROKERS: kafka:9092
+      CONSUL_HOST: consul
+      CONSUL_PORT: 8500
+
+  discount-engine:
+    build: ./services/discount-engine
+    container_name: aldi-discount-engine
+    ports:
+      - "5000:5000"
+    depends_on:
+      - postgres
+      - redis
+      - consul
+    environment:
+      DATABASE_URL: postgresql://aldi:aldi2026@postgres:5432/aldi_main
+      REDIS_URL: redis://redis:6379
+      CONSUL_HOST: consul
+      CONSUL_PORT: 8500
+
+  audit-service:
+    build: ./services/audit-service
+    container_name: aldi-audit-service
+    ports:
+      - "8084:8084"
+    depends_on:
+      - mongodb
+      - kafka
+      - consul
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_DATA_MONGODB_URI: mongodb://mongodb:27017/aldi_audit
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      CONSUL_HOST: consul
+      CONSUL_PORT: 8500
+
+volumes:
+  postgres_data:
+  mongo_data:
+  redis_data:
+  grafana_data:

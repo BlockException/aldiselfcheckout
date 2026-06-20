@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aldi-orchestrator
+  labels:
+    app: aldi-orchestrator
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: aldi-orchestrator
+  template:
+    metadata:
+      labels:
+        app: aldi-orchestrator
+    spec:
+      containers:
+      - name: aldi-orchestrator
+        image: aldi-orchestrator:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 3000
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: KAFKA_BROKERS
+          value: "kafka-service:9092"
+        - name: POSTGRES_URL
+          value: "postgresql://aldi:aldi2026@postgres-service:5432/aldi_main"
+        - name: MONGODB_URL
+          value: "mongodb://mongodb-service:27017/aldi_events"
+        - name: REDIS_URL
+          value: "redis://redis-service:6379"
+        resources:
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+          requests:
+            cpu: "250m"
+            memory: "256Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aldi-orchestrator-service
+spec:
+  selector:
+    app: aldi-orchestrator
+  ports:
+  - protocol: TCP
+    port: 3000
+    targetPort: 3000
+  type: LoadBalancer

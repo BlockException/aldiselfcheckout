@@ -1,0 +1,72 @@
+syntax = "proto3";
+
+package aldi.checkout.v1;
+
+option go_package = "github.com/aldi/checkout/v1";
+
+message CartItem {
+  string product_id = 1;
+  string ean = 2;
+  string name = 3;
+  int32 quantity = 4;
+  double unit_price = 5;
+  double discount_amount = 6;
+  double tax_rate = 7;
+  repeated string categories = 8;
+}
+
+message InitializeCheckoutRequest {
+  string terminal_id = 1;
+  optional string customer_id = 2;
+}
+
+message InitializeCheckoutResponse {
+  string checkout_id = 1;
+}
+
+message ScanItemRequest {
+  string checkout_id = 1;
+  CartItem item = 2;
+}
+
+message ScanItemResponse {
+  bool success = 1;
+}
+
+message RemoveItemRequest {
+  string checkout_id = 1;
+  string product_id = 2;
+  int32 quantity = 3;
+}
+
+message RemoveItemResponse {
+  bool success = 1;
+}
+
+message InitiatePaymentRequest {
+  string checkout_id = 1;
+  string payment_method = 2;
+  double amount = 3;
+  string currency = 4;
+}
+
+message InitiatePaymentResponse {
+  bool success = 1;
+  string transaction_id = 2;
+}
+
+message CompleteCheckoutRequest {
+  string checkout_id = 1;
+}
+
+message CompleteCheckoutResponse {
+  bool success = 1;
+}
+
+service CheckoutService {
+  rpc InitializeCheckout(InitializeCheckoutRequest) returns (InitializeCheckoutResponse);
+  rpc ScanItem(ScanItemRequest) returns (ScanItemResponse);
+  rpc RemoveItem(RemoveItemRequest) returns (RemoveItemResponse);
+  rpc InitiatePayment(InitiatePaymentRequest) returns (InitiatePaymentResponse);
+  rpc CompleteCheckout(CompleteCheckoutRequest) returns (CompleteCheckoutResponse);
+}
