@@ -168,7 +168,7 @@ docker-compose up -d
 
 ---
 
-## Über das Projekt
+### Über das Projekt
 
 Diese Architektur wurde entwickelt, um eine skalierbare und robuste Lösung für Selbstbedienerkassen zu bieten.
 
